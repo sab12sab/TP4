@@ -1,0 +1,27 @@
+# L'API prédit, Redis (service « base ») garde le compteur.
+# Le volume nommé survit à « docker compose down ».
+# « docker compose down -v » supprime ce volume, donc le compteur.
+
+services:
+  api:
+    build: .
+    image: iris-api:tp4
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: base
+      REDIS_PORT: "6379"
+    depends_on:
+      - base
+
+  base:
+    image: redis:7-alpine
+    # AOF : chaque INCR est écrit tout de suite dans /data.
+    # Sans ça, Redis n'enregistre qu'après un délai, et un down
+    # juste après les tests perdrait le compteur.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - compteur-iris:/data
+
+volumes:
+  compteur-iris:

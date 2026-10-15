@@ -1,0 +1,262 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage{titlesec}
+
+\geometry{margin=2cm}
+
+\definecolor{encre}{HTML}{B03A2E}
+\definecolor{fondjaune}{HTML}{FFF8E1}
+\definecolor{bordurejaune}{HTML}{D4A017}
+\definecolor{rouge}{HTML}{C0392B}
+\definecolor{vert}{HTML}{1E8449}
+
+\titleformat{name=\section,numberless}{\Large\bfseries\color{rouge}}{}{0em}{}
+\titleformat{name=\subsection,numberless}{\large\bfseries\color{rouge}}{}{0em}{}
+
+\newcommand{\qst}[2]{%
+  \par\vspace{0.55em}%
+  \noindent\textbf{\textcolor{vert}{#1}}~\textit{\textcolor{vert}{#2}}\par
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Compte rendu --- Série TP 4}
+\fancyhead[R]{\small Sabrine Essadeq}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\insertcapture}[2]{%
+  \IfFileExists{captures/#1}{%
+    \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.82\textwidth,keepaspectratio]{captures/#1}
+      \caption{#2}
+    \end{figure}
+  }{%
+    \begin{center}
+      \fcolorbox{bordurejaune}{fondjaune}{%
+        \begin{minipage}{0.88\textwidth}
+          \centering
+          \vspace{0.7cm}
+          {\small Capture d'écran --- \texttt{captures/#1}}\\[0.2em]
+          {\footnotesize\itshape à coller ici}
+          \vspace{0.7cm}
+        \end{minipage}}
+    \end{center}
+  }%
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+
+\begin{document}
+
+%======================== PAGE DE GARDE ========================
+\thispagestyle{empty}
+\vspace*{1.6cm}
+\begin{center}
+  {\large Université Mundiapolis}\\[1.4cm]
+  \textcolor{rouge}{\rule{0.72\textwidth}{1.1pt}}\\[0.7cm]
+  {\Large\bfseries Cloud Computing et Déploiement des Modèles IA}\\[0.55cm]
+  {\LARGE\bfseries\color{rouge} Compte rendu}\\[0.35cm]
+  {\large Série TP 4}\\[0.25cm]
+  {\large L'API iris et une base de données}\\[0.7cm]
+  \textcolor{rouge}{\rule{0.72\textwidth}{1.1pt}}\\[1.6cm]
+  \begin{tabular}{rl}
+    Réalisé par : & \textbf{Sabrine Essadeq} \\[0.45em]
+    Encadré par : & Pr.\ Mohammed AMEKSA \\[0.45em]
+    Année universitaire : & 2025 / 2026 \\[0.45em]
+    Date : & 15 octobre 2026 \\
+  \end{tabular}
+\end{center}
+\vfill
+\begin{center}
+  {\small Université Mundiapolis \quad\textperiodcentered\quad 2025 / 2026}
+\end{center}
+\clearpage
+\setcounter{page}{1}
+
+%======================== ENONCÉ ========================
+\section*{Énoncé --- TP 4}
+
+\textbf{Titre :} L'API iris et une base de données.
+
+\textbf{Objectif.} Reprendre l'API iris du TP et lui donner une mémoire : l'API prédit, Redis compte les prédictions.
+
+\textbf{Étapes.}
+\begin{enumerate}[leftmargin=1.4em]
+  \item Repartir du dépôt du TP : le Dockerfile et l'API iris.
+  \item Ajouter le compteur Redis à l'API (extrait fourni dans l'énoncé).
+  \item Écrire le \texttt{docker-compose.yml} (services \texttt{api} et \texttt{base}), le vérifier avec \texttt{config}.
+  \item Démarrer avec \texttt{docker compose up --build} et lire ce qui s'affiche.
+  \item Envoyer plusieurs requêtes à \texttt{localhost:8000/predict}, puis lire \texttt{/stats}.
+  \item Arrêter avec \texttt{down}, redémarrer : le compteur a-t-il survécu ?
+  \item Recommencer avec \texttt{down -v} : que se passe-t-il ?
+\end{enumerate}
+
+%======================== ÉTAPE 1 ========================
+\section*{Étape 1 --- Point de départ}
+
+Je repars de l'API iris du dépôt. Elle est dans \texttt{infer/app.py} : elle charge le modèle déjà enregistré par l'entraînement (\texttt{joblib}), elle a \texttt{GET /health}, et \texttt{POST /predict} prend les quatre mesures de la fleur. Pour ce TP je la reprends dans \texttt{tp4/}.
+
+\texttt{predict.py}, à côté, reste le mode terminal de l'exercice. Ici j'ai besoin du port 8000, donc le Dockerfile lance Uvicorn. Le modèle est écrit dans \texttt{/models/model.joblib} au moment du build, l'API ne réapprend rien à chaque requête.
+
+\begin{verbatim}
+tp4/
+  app.py
+  train_model.py
+  requirements.txt
+  Dockerfile
+\end{verbatim}
+
+\insertcapture{01_depot.png}{Dossier \texttt{tp4} : l'API, ses dépendances et le Dockerfile.}
+\insertcapture{02_dockerfile.png}{Dockerfile : image slim, Uvicorn sur le port 8000.}
+\insertcapture{03_api.png}{Route \texttt{POST /predict} : quatre mesures, une espèce.}
+
+%======================== ÉTAPE 2 ========================
+\section*{Étape 2 --- Compteur Redis}
+
+Si je compte dans une variable Python, le total disparaît avec le conteneur. Je mets donc le compteur dans Redis, et j'ajoute \texttt{redis==5.2.1} dans \texttt{requirements.txt}.
+
+Le client lit \texttt{REDIS\_HOST}. Par défaut c'est \texttt{base}, le nom du service dans Compose : les deux conteneurs se trouvent par ce nom, je n'ai pas d'adresse IP à écrire. \texttt{decode\_responses=True} me renvoie du texte, je peux le convertir en entier directement.
+
+Après la prédiction j'appelle \texttt{INCR} sur la clé \texttt{predictions}. Ce n'est pas un « je lis, j'ajoute 1, j'écris » : \texttt{INCR} le fait en une fois, deux requêtes en même temps ne s'écrasent pas. \texttt{GET /stats} ne relance pas le modèle, il relit la clé. S'il n'y a pas encore eu de prédiction, la clé n'existe pas et je réponds 0.
+
+\begin{verbatim}
+compteur = redis.Redis(host=os.environ.get("REDIS_HOST", "base"),
+                       port=6379, decode_responses=True)
+total = compteur.incr("predictions")          # dans POST /predict
+total = compteur.get("predictions")           # dans GET /stats
+return {"predictions": int(total or 0)}
+\end{verbatim}
+
+\insertcapture{04_redis.png}{Connexion Redis : hôte \texttt{base}, clé \texttt{predictions}.}
+\insertcapture{05_stats.png}{\texttt{INCR} dans \texttt{/predict}, lecture dans \texttt{/stats}.}
+
+%======================== ÉTAPE 3 ========================
+\section*{Étape 3 --- Docker Compose}
+
+J'écris \texttt{tp4/docker-compose.yml}. Le Compose à la racine du dépôt, c'est celui de l'exercice (\texttt{train} puis \texttt{infer}). Ici il y a deux services.
+
+\texttt{api} se construit avec le Dockerfile, publie \texttt{8000:8000}, reçoit \texttt{REDIS\_HOST=base}, et attend \texttt{base}. \texttt{base} est \texttt{redis:7-alpine}. Je ne publie pas son port : depuis mon PC je n'ai pas à y accéder, seule l'API lui parle sur le réseau Compose.
+
+Le compteur est dans le volume \texttt{compteur-iris}, monté sur \texttt{/data}. \texttt{down} enlève les conteneurs et garde ce volume. \texttt{down -v} l'enlève aussi. C'est ce que je vérifie aux étapes 6 et 7.
+
+Redis n'écrit une photo des données qu'après un délai. Sur un TP de quelques minutes, ce délai ne passe pas, et le compteur serait perdu même avec un volume. Je lance donc Redis avec \texttt{--appendonly yes} : chaque \texttt{INCR} est écrit tout de suite dans \texttt{/data}.
+
+\begin{verbatim}
+docker compose config
+\end{verbatim}
+
+\texttt{config} ne démarre rien, il vérifie le fichier. La première fois je l'ai lancée à la racine : la sortie montrait \texttt{train} et \texttt{infer}. Je n'étais pas dans \texttt{tp4}. Une fois dans le bon dossier, le projet s'appelle \texttt{tp4}, l'API dépend de \texttt{base}, le port 8000 est publié, Redis a \texttt{--appendonly yes}, et le volume \texttt{tp4\_compteur-iris} est monté sur \texttt{/data}.
+
+\insertcapture{06_compose.png}{\texttt{docker-compose.yml} : \texttt{api}, \texttt{base}, volume \texttt{compteur-iris}.}
+\insertcapture{07_config.png}{\texttt{docker compose config} dans \texttt{tp4}.}
+
+%======================== ÉTAPE 4 ========================
+\section*{Étape 4 --- Démarrage}
+
+\begin{verbatim}
+docker compose up --build
+\end{verbatim}
+
+Le premier essai a échoué tout de suite : \texttt{dockerDesktopLinuxEngine: The system cannot find the file specified}. Le fichier Compose était bon, j'étais déjà dans \texttt{tp4}. Docker Desktop était éteint. Je l'ai ouvert, \texttt{docker info} a répondu, version 28.5.1.
+
+Le build a ensuite cassé dans \texttt{pip}, avec \texttt{THESE PACKAGES DO NOT MATCH THE HASHES}. Je n'ai mis aucun hash dans \texttt{requirements.txt}. C'est le wheel \texttt{scipy} (environ 35 Mo) dont le téléchargement a été coupé. Le \texttt{pip} 24.0 de l'image \texttt{python:3.11-slim} refuse le fichier.
+
+J'ai modifié l'image avant de relancer. \texttt{libgomp1}, parce que scikit-learn a besoin d'OpenMP et que l'image slim ne l'a pas. \texttt{pip} est mis à jour, avec \texttt{--retries 5}, pour qu'un wheel coupé soit retéléchargé. \texttt{numpy==2.1.3} et \texttt{scipy==1.14.1} sont fixés à côté de \texttt{scikit-learn==1.5.2} : sinon \texttt{pip} prend \texttt{scipy} 1.17, beaucoup plus lourd, pour rien ici.
+
+Au build suivant, Redis dit \texttt{Ready to accept connections} et crée les fichiers AOF. Uvicorn dit \texttt{Application startup complete} sur \texttt{0.0.0.0:8000}.
+
+J'ai ouvert \texttt{http://localhost:8000/} dans le navigateur : \texttt{404}. Il n'y a pas de route à la racine. Celles qui existent sont \texttt{POST /predict} et \texttt{GET /stats}. Le 404 montre au moins que le conteneur répond.
+
+\insertcapture{08_dockerfile.png}{Dockerfile après correction du build : \texttt{libgomp1} et \texttt{pip} à jour.}
+\insertcapture{09_up.png}{Les deux services sont prêts. \texttt{GET /} répond 404.}
+
+%======================== ÉTAPE 5 ========================
+\section*{Étape 5 --- Prédictions et compteur}
+
+Je laisse le terminal de \texttt{up} ouvert. Les requêtes partent d'un deuxième terminal, sinon \texttt{Ctrl+C} coupe les conteneurs.
+
+Une fleur de chaque espèce :
+
+\begin{verbatim}
+setosa      : 5,1  3,5  1,4  0,2
+versicolor  : 6,0  2,9  4,5  1,5
+virginica   : 6,3  3,3  6,0  2,5
+\end{verbatim}
+
+Les trois espèces sont reconnues. Le compteur passe à 1, puis 2, puis 3. \texttt{/stats} répond aussi 3, sans nouvelle prédiction : il lit la même clé Redis.
+
+Dans les logs de \texttt{api}, je vois trois \texttt{POST /predict} en 200 et un \texttt{GET /stats} en 200. Les deux \texttt{GET /} en 404, c'est le navigateur.
+
+\insertcapture{10_predict.png}{Trois espèces, compteur 1, 2, 3, puis \texttt{/stats} à 3.}
+\insertcapture{10b_logs.png}{Les mêmes requêtes, vues dans le journal du conteneur.}
+
+%======================== ÉTAPE 6 ========================
+\section*{Étape 6 --- \texttt{down} puis redémarrage}
+
+\begin{verbatim}
+docker compose down
+docker compose up
+\end{verbatim}
+
+\texttt{down} a supprimé \texttt{tp4-api-1}, \texttt{tp4-base-1} et le réseau. Pas le volume : aucune ligne \texttt{compteur-iris Removed}.
+
+Au redémarrage, Redis affiche \texttt{DB loaded from append only file}. Il a relu le fichier AOF du volume. La ligne \texttt{keys loaded: 0} ne concerne que le fichier de base. Les \texttt{INCR} sont dans le fichier d'incréments, chargé juste après. Sans \texttt{--appendonly yes}, cet arrêt aurait été trop court pour la photo périodique de Redis, et j'aurais cru que le volume ne servait à rien.
+
+\texttt{/stats}, sans renvoyer de fleur, vaut encore \textbf{3}.
+
+\insertcapture{11_down.png}{\texttt{down} : conteneurs et réseau supprimés, volume gardé.}
+\insertcapture{12_restart.png}{Redis recharge le fichier AOF.}
+\insertcapture{13_stats_apres.png}{Après redémarrage, le compteur est toujours à 3.}
+
+%======================== ÉTAPE 7 ========================
+\section*{Étape 7 --- \texttt{down -v}}
+
+\begin{verbatim}
+docker compose down -v
+docker compose up
+\end{verbatim}
+
+Cette fois la sortie contient \texttt{Volume tp4\_compteur-iris Removed}. Le \texttt{up} recrée un volume du même nom, vide.
+
+Redis ne dit plus qu'il charge un ancien fichier. Il dit \texttt{Creating AOF ... on server start} : les fichiers sont neufs.
+
+\texttt{/stats} vaut \textbf{0}. La clé n'existe plus, et l'API répond 0 au lieu de planter. Le compteur n'était pas dans l'image de l'API. Il était sur le volume. Effacer le volume efface la mémoire.
+
+\insertcapture{14_down_v.png}{\texttt{down -v} supprime le volume, puis un volume vide est recréé.}
+\insertcapture{14_aof_neuf.png}{Redis crée de nouveaux fichiers AOF.}
+\insertcapture{15_stats_zero.png}{Après \texttt{down -v}, \texttt{/stats} vaut 0.}
+
+%======================== CONCLUSION ========================
+\section*{Conclusion}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+Ce que j'ai fait & Volume & \texttt{/stats} \\
+\midrule
+Trois \texttt{POST /predict} & le compteur est écrit & 3 \\
+\texttt{down} puis \texttt{up} & le volume reste & 3 \\
+\texttt{down -v} puis \texttt{up} & le volume est recréé vide & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+L'API reconnaît la fleur. Redis garde le nombre de prédictions dans un volume, et chaque \texttt{INCR} est écrit tout de suite (\texttt{--appendonly yes}). \texttt{down} enlève les conteneurs et laisse ce disque : le compteur est encore à 3. \texttt{down -v} enlève le disque : il revient à 0.
+
+\end{document}
